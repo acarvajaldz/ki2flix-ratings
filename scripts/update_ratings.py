@@ -75,8 +75,9 @@ def load_gz_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 def save_gz_json(path: Path, payload: dict[str, Any]) -> None:
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    with gzip.open(path, "wb", compresslevel=9, mtime=0) as f:
-        f.write(raw)
+    with path.open("wb") as raw_f:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw_f, compresslevel=9, mtime=0) as f:
+            f.write(raw)
 
 
 def tmdb_get(api_key: str, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -122,14 +123,14 @@ def discover_tmdb_ids(tmdb_key: str) -> tuple[dict[str, int], dict[str, int]]:
                 break
 
     # Core feeds (trending, popular, top rated, now playing / on the air)
-    collect("trending/movie/week", movies, "release_date", pages=5)
-    collect("trending/tv/week", shows, "first_air_date", pages=5)
-    collect("movie/popular", movies, "release_date", pages=15)
-    collect("tv/popular", shows, "first_air_date", pages=15)
-    collect("movie/top_rated", movies, "release_date", pages=15)
-    collect("tv/top_rated", shows, "first_air_date", pages=15)
-    collect("movie/now_playing", movies, "release_date", pages=4)
-    collect("tv/on_the_air", shows, "first_air_date", pages=4)
+    collect("trending/movie/week", movies, "release_date", pages=8)
+    collect("trending/tv/week", shows, "first_air_date", pages=8)
+    collect("movie/popular", movies, "release_date", pages=30)
+    collect("tv/popular", shows, "first_air_date", pages=25)
+    collect("movie/top_rated", movies, "release_date", pages=30)
+    collect("tv/top_rated", shows, "first_air_date", pages=25)
+    collect("movie/now_playing", movies, "release_date", pages=5)
+    collect("tv/on_the_air", shows, "first_air_date", pages=5)
 
     # Major streaming platforms in Spain (popular + top rated)
     for pid in PROVIDERS_ES:
@@ -138,10 +139,10 @@ def discover_tmdb_ids(tmdb_key: str) -> tuple[dict[str, int], dict[str, int]]:
             "with_watch_providers": str(pid),
             "with_watch_monetization_types": "flatrate",
         }
-        collect("discover/movie", movies, "release_date", pages=4, extra={**base_params, "sort_by": "popularity.desc"})
-        collect("discover/movie", movies, "release_date", pages=3, extra={**base_params, "sort_by": "vote_average.desc", "vote_count.gte": "100"})
-        collect("discover/tv", shows, "first_air_date", pages=4, extra={**base_params, "sort_by": "popularity.desc"})
-        collect("discover/tv", shows, "first_air_date", pages=3, extra={**base_params, "sort_by": "vote_average.desc", "vote_count.gte": "50"})
+        collect("discover/movie", movies, "release_date", pages=6, extra={**base_params, "sort_by": "popularity.desc"})
+        collect("discover/movie", movies, "release_date", pages=4, extra={**base_params, "sort_by": "vote_average.desc", "vote_count.gte": "100"})
+        collect("discover/tv", shows, "first_air_date", pages=6, extra={**base_params, "sort_by": "popularity.desc"})
+        collect("discover/tv", shows, "first_air_date", pages=4, extra={**base_params, "sort_by": "vote_average.desc", "vote_count.gte": "50"})
 
     return movies, shows
 
