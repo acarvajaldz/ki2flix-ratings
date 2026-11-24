@@ -33,10 +33,12 @@ PROVIDERS_ES = [8, 119, 337, 1899, 350, 149, 1773, 63, 62, 393]
 BATCH_SIZE = 150
 RESERVE_DAILY_REQUESTS = 200  # Always leave >=200/day for live family TV Box fallbacks
 MAX_BATCHES_PER_RUN = 45      # Upper bound per run even if batch counts as 1 request
-FRESH_TTL_OLD_SEC = 90 * 86400
-FRESH_TTL_RECENT_SEC = 14 * 86400
+FRESH_TTL_RECENT_SEC = 14 * 86400   # Releases < 6 months old: refresh every 14 days
+FRESH_TTL_MID_SEC = 180 * 86400     # Releases 6–24 months old: refresh every 6 months
+FRESH_TTL_CLASSIC_SEC = 365 * 86400 # Releases > 2 years old: refresh once a year
+SIX_MONTHS_SEC = 180 * 86400
+TWO_YEARS_SEC = 730 * 86400
 MISS_TTL_SEC = 30 * 86400
-CURRENT_YEAR = time.gmtime().tm_year
 
 
 def http_json(url: str, data: dict[str, Any] | None = None, timeout: int = 20) -> tuple[int, dict[str, str], Any]:
@@ -91,8 +93,22 @@ def tmdb_get(api_key: str, endpoint: str, params: dict[str, Any] | None = None) 
     return None
 
 
+def parse_release_ts(date_str: str) -> int:
+    if len(date_str) >= 10:
+        try:
+            return int(time.mktime(time.strptime(date_str[:10], "%Y-%m-%d")))
+        except ValueError:
+            pass
+    if len(date_str) >= 4 and date_str[:4].isdigit():
+        try:
+            return int(time.mktime(time.strptime(f"{date_str[:4]}-06-15", "%Y-%m-%d")))
+        except ValueError:
+            pass
+    return 0
+
+
 def discover_tmdb_ids(tmdb_key: str) -> tuple[dict[str, int], dict[str, int]]:
-    """Returns (movie_years, tv_years) keyed by TMDB ID string -> release year (or 0)."""
+    """Returns (movie_release_ts, tv_release_ts) keyed by TMDB ID string -> release epoch (or 0)."""
     movies: dict[str, int] = {}
     shows: dict[str, int] = {}
 
@@ -104,9 +120,7 @@ def discover_tmdb_ids(tmdb_key: str) -> tuple[dict[str, int], dict[str, int]]:
             sid = str(tid)
             if sid in target:
                 continue
-            d = item.get(date_field) or ""
-            yr = int(d[:4]) if len(d) >= 4 and d[:4].isdigit() else 0
-            target[sid] = yr
+            target[sid] = parse_release_ts(str(item.get(date_field) or ""))
 
     def collect(endpoint: str, target: dict[str, int], date_field: str, pages: int, extra: dict[str, Any] | None = None) -> None:
         for page in range(1, pages + 1):
@@ -200,14 +214,20 @@ def compute_entry(obj: dict[str, Any]) -> list[int | None] | None:
     return [avg10, imdb10, rt_int, tmdb10]
 
 
-def is_stale(sid: str, year: int, meta_bucket: dict[str, int], miss_bucket: dict[str, int], now: int) -> bool:
+def is_stale(sid: str, release_ts: int, meta_bucket: dict[str, int], miss_bucket: dict[str, int], now: int) -> bool:
     last_miss = miss_bucket.get(sid)
     if last_miss and now - last_miss < MISS_TTL_SEC:
         return False
     last_ok = meta_bucket.get(sid)
     if not last_ok:
         return True
-    ttl = FRESH_TTL_RECENT_SEC if year >= CURRENT_YEAR - 1 else FRESH_TTL_OLD_SEC
+    age_since_release = (now - release_ts) if release_ts > 0 else TWO_YEARS_SEC + 1
+    if age_since_release < SIX_MONTHS_SEC:
+        ttl = FRESH_TTL_RECENT_SEC
+    elif age_since_release < TWO_YEARS_SEC:
+        ttl = FRESH_TTL_MID_SEC
+    else:
+        ttl = FRESH_TTL_CLASSIC_SEC
     return (now - last_ok) >= ttl
 
 
