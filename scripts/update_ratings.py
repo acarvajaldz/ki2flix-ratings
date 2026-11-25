@@ -30,9 +30,14 @@ MDBLIST_BASE = "https://api.mdblist.com"
 # Spanish + major global streaming providers covered in KI²flix Channels
 PROVIDERS_ES = [8, 119, 337, 1899, 350, 149, 1773, 63, 62, 393]
 
+# Genres matching KI²flix Categories so ★ Nota (vote_count.gte 300/150) hits the shared cache immediately
+MOVIE_GENRES_HIGH_VOTES = [28, 12, 16, 35, 80, 18, 10751, 14, 27, 9648, 10749, 878, 53, 10752]
+MOVIE_GENRES_NICHE_VOTES = [99, 10402, 37, 10770]  # Documentary, Music, Western, TV Movie
+TV_GENRES_HIGH_VOTES = [10759, 16, 35, 80, 99, 18, 10751, 9648, 10765, 10768, 37]
+
 BATCH_SIZE = 150
 RESERVE_DAILY_REQUESTS = 200  # Always leave >=200/day for live family TV Box fallbacks
-MAX_BATCHES_PER_RUN = 45      # Upper bound per run even if batch counts as 1 request
+MAX_BATCHES_PER_RUN = 60      # Upper bound per run even if batch counts as 1 request
 FRESH_TTL_RECENT_SEC = 14 * 86400   # Releases < 6 months old: refresh every 14 days
 FRESH_TTL_MID_SEC = 180 * 86400     # Releases 6–24 months old: refresh every 6 months
 FRESH_TTL_CLASSIC_SEC = 365 * 86400 # Releases > 2 years old: refresh once a year
@@ -157,6 +162,14 @@ def discover_tmdb_ids(tmdb_key: str) -> tuple[dict[str, int], dict[str, int]]:
         collect("discover/movie", movies, "release_date", pages=4, extra={**base_params, "sort_by": "vote_average.desc", "vote_count.gte": "100"})
         collect("discover/tv", shows, "first_air_date", pages=6, extra={**base_params, "sort_by": "popularity.desc"})
         collect("discover/tv", shows, "first_air_date", pages=4, extra={**base_params, "sort_by": "vote_average.desc", "vote_count.gte": "50"})
+
+    # Per-genre top-rated discovery matching KI²flix adaptive vote floors (300/150 movies/TV, 50 niche)
+    for gid in MOVIE_GENRES_HIGH_VOTES:
+        collect("discover/movie", movies, "release_date", pages=3, extra={"with_genres": str(gid), "sort_by": "vote_average.desc", "vote_count.gte": "300"})
+    for gid in MOVIE_GENRES_NICHE_VOTES:
+        collect("discover/movie", movies, "release_date", pages=2, extra={"with_genres": str(gid), "sort_by": "vote_average.desc", "vote_count.gte": "50"})
+    for gid in TV_GENRES_HIGH_VOTES:
+        collect("discover/tv", shows, "first_air_date", pages=2, extra={"with_genres": str(gid), "sort_by": "vote_average.desc", "vote_count.gte": "150"})
 
     return movies, shows
 
