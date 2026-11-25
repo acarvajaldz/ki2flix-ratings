@@ -191,6 +191,7 @@ def compute_entry(obj: dict[str, Any]) -> list[int | None] | None:
     imdb: float | None = None
     tomatoes: float | None = None
     popcorn: float | None = None
+    metacritic: float | None = None
     tmdb: float | None = None
 
     for r in ratings:
@@ -207,16 +208,18 @@ def compute_entry(obj: dict[str, Any]) -> list[int | None] | None:
             tomatoes = score_f if score_f is not None else value_f
         elif source == "popcorn":
             popcorn = score_f if score_f is not None else value_f
+        elif source == "metacritic":
+            metacritic = score_f if score_f is not None else value_f
         elif source == "tmdb":
             tmdb = score_f if score_f is not None else value_f
 
     imdb_norm = imdb if imdb is not None and 0.0 < imdb <= 100.0 else None
-    rt_norm = tomatoes if tomatoes is not None and 0.0 < tomatoes <= 100.0 else (
-        popcorn if popcorn is not None and 0.0 < popcorn <= 100.0 else None
-    )
+    rt_norm = tomatoes if tomatoes is not None and 0.0 < tomatoes <= 100.0 else None
+    pop_norm = popcorn if popcorn is not None and 0.0 < popcorn <= 100.0 else None
+    mc_norm = metacritic if metacritic is not None and 0.0 < metacritic <= 100.0 else None
     tmdb_norm = tmdb if tmdb is not None and 0.0 < tmdb <= 100.0 else None
 
-    available = [x for x in (imdb_norm, rt_norm, tmdb_norm) if x is not None]
+    available = [x for x in (imdb_norm, rt_norm, pop_norm, mc_norm, tmdb_norm) if x is not None]
     if not available:
         return None
 
@@ -224,7 +227,9 @@ def compute_entry(obj: dict[str, Any]) -> list[int | None] | None:
     imdb10 = int(round(imdb_norm)) if imdb_norm is not None else None
     rt_int = int(round(rt_norm)) if rt_norm is not None else None
     tmdb10 = int(round(tmdb_norm)) if tmdb_norm is not None else None
-    return [avg10, imdb10, rt_int, tmdb10]
+    pop_int = int(round(pop_norm)) if pop_norm is not None else None
+    mc_int = int(round(mc_norm)) if mc_norm is not None else None
+    return [avg10, imdb10, rt_int, tmdb10, pop_int, mc_int]
 
 
 def is_stale(sid: str, release_ts: int, meta_bucket: dict[str, int], miss_bucket: dict[str, int], now: int) -> bool:
@@ -280,14 +285,22 @@ def main() -> int:
     discovered_m, discovered_t = discover_tmdb_ids(tmdb_key)
     print(f"Discovered {len(discovered_m)} unique movies and {len(discovered_t)} unique TV shows.")
 
-    # Prioritize missing titles first, then stale titles
+    # Prioritize missing titles first, then stale titles, then legacy 4-field entries lacking popcorn/metacritic
     todo_m = sorted(
-        [sid for sid, yr in discovered_m.items() if is_stale(sid, yr, meta_m, miss_m, now)],
-        key=lambda sid: (0 if sid not in ratings_m else 1, -discovered_m[sid]),
+        [
+            sid
+            for sid, yr in discovered_m.items()
+            if is_stale(sid, yr, meta_m, miss_m, now) or (sid in ratings_m and len(ratings_m[sid]) < 6)
+        ],
+        key=lambda sid: (0 if sid not in ratings_m else (1 if is_stale(sid, discovered_m[sid], meta_m, miss_m, now) else 2), -discovered_m[sid]),
     )
     todo_t = sorted(
-        [sid for sid, yr in discovered_t.items() if is_stale(sid, yr, meta_t, miss_t, now)],
-        key=lambda sid: (0 if sid not in ratings_t else 1, -discovered_t[sid]),
+        [
+            sid
+            for sid, yr in discovered_t.items()
+            if is_stale(sid, yr, meta_t, miss_t, now) or (sid in ratings_t and len(ratings_t[sid]) < 6)
+        ],
+        key=lambda sid: (0 if sid not in ratings_t else (1 if is_stale(sid, discovered_t[sid], meta_t, miss_t, now) else 2), -discovered_t[sid]),
     )
     print(f"Pending refresh: {len(todo_m)} movies, {len(todo_t)} TV shows.")
 
